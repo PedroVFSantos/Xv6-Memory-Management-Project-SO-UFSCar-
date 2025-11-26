@@ -86,6 +86,8 @@ struct segdesc {
 
 #define PTXSHIFT        12      // offset of PTX in a linear address
 #define PDXSHIFT        22      // offset of PDX in a linear address
+#define PGSHIFT         12
+#define PTXSHIFT        12   // offset of PTX in a linear address
 
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
@@ -99,6 +101,7 @@ struct segdesc {
 // Address in page table or page directory entry
 #define PTE_ADDR(pte)   ((uint)(pte) & ~0xFFF)
 #define PTE_FLAGS(pte)  ((uint)(pte) &  0xFFF)
+#define PTE_COW 0x100
 
 #ifndef __ASSEMBLER__
 typedef uint pte_t;
