@@ -530,5 +530,48 @@ procdump(void)
         cprintf(" %p", pc[i]);
     }
     cprintf("\n");
+
+    if(p->state == ZOMBIE) continue; 
+
+    cprintf("Page tables:\n");
+    cprintf("  memory location of page directory = %p\n", V2P(p->pgdir));
+
+    pde_t *pde;
+    pte_t *pgtab;
+    pte_t *pte;
+
+    for(int i = 0; i < NPDENTRIES; i++){
+      pde = &p->pgdir[i];
+      if(*pde & PTE_P){ 
+        
+        pgtab = (pte_t*)P2V(PTE_ADDR(*pde)); 
+        cprintf("  pdir PTE %d, %d:\n", i, PTE_ADDR(*pde) >> 12);
+        cprintf("    memory location of page table = %p\n", PTE_ADDR(*pde));
+
+        for(int j = 0; j < NPTENTRIES; j++){
+          pte = &pgtab[j];
+          if((*pte & PTE_P) && (*pte & PTE_U)){
+             uint pa = PTE_ADDR(*pte);
+             cprintf("    ptbl PTE %d, %d, %p\n", j, pa >> 12, pa);
+          }
+        }
+      }
+    }
+    
+    cprintf("Page mappings:\n");
+    for(int i = 0; i < NPDENTRIES; i++){
+      pde = &p->pgdir[i];
+      if(*pde & PTE_P){
+        pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+        for(int j = 0; j < NPTENTRIES; j++){
+           pte = &pgtab[j];
+           if((*pte & PTE_P) && (*pte & PTE_U)){
+             uint va = (i << 22) | (j << 12);
+             uint pa = PTE_ADDR(*pte);
+             cprintf("%d -> %d\n", va >> 12, pa >> 12);
+             }
+         }
+      }
+    }
   }
 }
