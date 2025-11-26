@@ -78,6 +78,65 @@ trap(struct trapframe *tf)
     lapiceoi();
     break;
 
+  // --- IMPLEMENTACAO TASK 4: Tratamento de Page Fault (CoW) ---
+  case T_PGFLT:
+    {
+      struct proc *p = myproc();
+      uint va = rcr2(); // Endereco que causou o erro
+      pte_t *pte;
+
+      // Verifica se endereco esta dentro dos limites do processo
+      if(va >= p->sz){
+         p->killed = 1;
+         break;
+      }
+      
+      // Busca a entrada na tabela de paginas
+      pte = walkpgdir(p->pgdir, (void*)va, 0);
+
+      // Verifica se a pagina existe e se eh COW
+      if(pte && (*pte & PTE_P) && (*pte & PTE_COW)){
+         uint pa = PTE_ADDR(*pte);
+         char *mem = kalloc(); // Aloca nova pagina
+         
+         if(mem == 0){
+            // Falta de memoria: mata o processo
+            p->killed = 1;
+            break;
+         }
+
+         // Copia o conteudo da pagina antiga para a nova
+         memmove(mem, (char*)P2V(pa), PGSIZE);
+         
+         // Ajusta flags: Ativa escrita, desativa COW
+         uint flags = PTE_FLAGS(*pte);
+         flags |= PTE_W;
+         flags &= ~PTE_COW;
+
+         // Atualiza a tabela para apontar para a nova pagina
+         *pte = V2P(mem) | flags;
+         
+         // Decrementa referencia da pagina antiga
+         dec_ref(pa);
+         
+         // Flush TLB
+         lcr3(V2P(p->pgdir));
+         
+         // (Opcional) Log para debug
+          //cprintf("COW: Copia realizada. PA: %p -> PID: %d\n", pa, p->pid);
+         
+      } else {
+         // Se nao for COW, eh um erro legitimo (Segmentation Fault)
+         cprintf("pid %d %s: trap %d err %d on cpu %d "
+            "eip 0x%x addr 0x%x--kill proc\n",
+            myproc()->pid, myproc()->name, tf->trapno,
+            tf->err, cpuid(), tf->eip, rcr2());
+         p->killed = 1;
+      }
+    }
+    break;
+  // ------------------------------------------------------------
+
   //PAGEBREAK: 13
   default:
     if(myproc() == 0 || (tf->cs&3) == 0){

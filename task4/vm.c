@@ -32,7 +32,8 @@ seginit(void)
 // Return the address of the PTE in page table pgdir
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page table pages.
-static pte_t *
+// --- MODIFICADO: Removemos 'static' para usar no trap.c ---
+pte_t *
 walkpgdir(pde_t *pgdir, const void *va, int alloc)
 {
   pde_t *pde;
@@ -312,37 +313,51 @@ clearpteu(pde_t *pgdir, char *uva)
 
 // Given a parent process's page table, create a copy
 // of it for a child.
+// --- IMPLEMENTACAO TASK 4: Copy-on-Write ---
 pde_t*
 copyuvm(pde_t *pgdir, uint sz)
 {
   pde_t *d;
   pte_t *pte;
   uint pa, i, flags;
-  char *mem;
 
   if((d = setupkvm()) == 0)
     return 0;
+    
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
     if(!(*pte & PTE_P))
       panic("copyuvm: page not present");
+      
     pa = PTE_ADDR(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto bad;
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
-      kfree(mem);
+
+    // Se a pagina for gravavel, marca como Read-Only e COW
+    if(flags & PTE_W) {
+       flags &= ~PTE_W;  // Desativa escrita
+       flags |= PTE_COW; // Ativa flag COW
+       *pte = pa | flags; // Atualiza tabela do PAI
+    }
+
+    // Mapeia no FILHO apontando para a MESMA memoria fisica
+    if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0) {
       goto bad;
     }
+    
+    // Incrementa o contador de referencias
+    inc_ref(pa);
   }
+  
+  // Recarrega TLB para aplicar as novas permissoes no pai
+  lcr3(V2P(pgdir));
   return d;
 
 bad:
   freevm(d);
   return 0;
 }
+// -------------------------------------------
 
 //PAGEBREAK!
 // Map user virtual address to kernel address.
@@ -384,11 +399,3 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
   }
   return 0;
 }
-
-//PAGEBREAK!
-// Blank page.
-//PAGEBREAK!
-// Blank page.
-//PAGEBREAK!
-// Blank page.
-
